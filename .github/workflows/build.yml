@@ -1,42 +1,50 @@
-name: CI
+name: Build Android APK
+
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main  # Trigger on pushes to the main branch
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  build:
-    runs-on: ubuntu-20.04
+  build-android:
+    runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3 # Update checkout action to v3
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-      # Used to cache dependencies with a timeout
-      - name: Get Date
-        id: get-date
-        run: |
-          echo "::set-output name=date::$(/bin/date -u '+%Y%m%d')"
-        shell: bash
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
 
-      - name: Cache Buildozer global directory
-        uses: actions/cache@v3 # Update cache action to v3
-        with:
-          path: .buildozer_global
-          key: buildozer-global-${{ hashFiles('buildozer.spec') }}
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y python3-pip openjdk-17-jdk git zip
+        pip install --upgrade pip
+        pip install buildozer cython
 
-      - uses: actions/cache@v3 # Update cache action to v3
-        with:
-          path: .buildozer
-          key: ${{ runner.os }}-${{ steps.get-date.outputs.date }}-${{ hashFiles('buildozer.spec') }}
+    - name: Initialize Buildozer
+      run: |
+        buildozer init
 
-      - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
-        id: buildozer
-        with:
-          command: buildozer android debug
-          buildozer_version: stable
+    - name: Update Buildozer spec file
+      run: |
+        sed -i 's/^# \(source.include_exts = py,png,jpg,kv,atlas\)/\1/' buildozer.spec
+        sed -i 's/^# \(source.include_patterns = \)/\1*.kv/' buildozer.spec
+        sed -i 's/^# \(title = My Application\)/\1\npackage.name = hello_kivy\npackage.domain = com.example/' buildozer.spec
+        sed -i 's/^# \(requirements = python3\)/\1,kivy/' buildozer.spec
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v3 # Update upload artifact action to v3
-        with:
-          name: package
-          path: ${{ steps.buildozer.outputs.filename }}
+    - name: Build APK
+      run: |
+        buildozer -v android debug
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v3
+      with:
+        name: HelloKivy-debug.apk
+        path: bin/*.apk
